@@ -27,4 +27,9 @@ class Onboarding extends Model
     {
         return $this->hasMany(OnboardingTask::class);
     }
+
+        public function documents(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Document::class);
+    }
 }
