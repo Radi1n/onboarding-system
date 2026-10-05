@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OnboardingStepController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\DashboardController;
 
 Route::post('/auth/login', [AuthController::class, 'login']);
 
@@ -14,6 +15,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
+        Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
     Route::get('/admin-only', fn () => ['message' => 'Welcome, admin'])
         ->middleware('role:admin');
 

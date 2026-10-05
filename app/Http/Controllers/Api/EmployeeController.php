@@ -11,11 +11,18 @@ use Illuminate\Support\Facades\DB;
 
 class EmployeeController extends Controller
 {
+    private const RELATIONS = [
+        'user:id,name,email',
+        'department:id,name',
+        'manager:id,name',
+        'onboarding:id,employee_id,status',
+    ];
+
     public function index(Request $request)
     {
         $user = $request->user();
 
-        $query = Employee::with(['user:id,name,email', 'department:id,name', 'manager:id,name']);
+        $query = Employee::with(self::RELATIONS);
 
         if ($user->hasRole('employee')) {
             $query->where('user_id', $user->id);
@@ -57,10 +64,7 @@ class EmployeeController extends Controller
             ]);
         });
 
-        return response()->json(
-            $employee->load(['user:id,name,email', 'department:id,name', 'manager:id,name']),
-            201
-        );
+        return response()->json($employee->load(self::RELATIONS), 201);
     }
 
     public function show(Request $request, Employee $employee)
@@ -75,7 +79,7 @@ class EmployeeController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        return $employee->load(['user:id,name,email', 'department:id,name', 'manager:id,name']);
+        return $employee->load(self::RELATIONS);
     }
 
     public function update(Request $request, Employee $employee)
@@ -91,7 +95,7 @@ class EmployeeController extends Controller
 
         $employee->update($data);
 
-        return $employee->load(['user:id,name,email', 'department:id,name', 'manager:id,name']);
+        return $employee->load(self::RELATIONS);
     }
 
     public function destroy(Employee $employee)

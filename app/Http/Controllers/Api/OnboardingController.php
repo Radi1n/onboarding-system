@@ -71,6 +71,21 @@ class OnboardingController extends Controller
             return response()->json(['message' => 'Onboarding is not waiting for employee.'], 422);
         }
 
+        // لازم الملفين يكونون مرفوعين وما فيه ملف مرفوض
+        $docs = $onboarding->documents()->pluck('status', 'type');
+
+        if (! $docs->has('national_id') || ! $docs->has('contract')) {
+            return response()->json([
+                'message' => 'Please upload both your national ID and signed contract before submitting.',
+            ], 422);
+        }
+
+        if ($docs->contains('rejected')) {
+            return response()->json([
+                'message' => 'A document was rejected. Please upload it again before submitting.',
+            ], 422);
+        }
+
         DB::transaction(function () use ($onboarding) {
             $onboarding->tasks()
                 ->where('assigned_role', 'employee')
