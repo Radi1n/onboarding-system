@@ -3,7 +3,6 @@
 REST API for an employee onboarding system. It takes a new hire from the moment HR creates their account to the day the manager gives the final approval, with every role seeing only what it should.
 
 🔗 **Frontend repository:** [onboarding-frontend](https://github.com/Radi1n/onboarding-frontend)
-🚀 **Live demo:** _coming soon_
 
 ## What it does
 
@@ -113,4 +112,3 @@ Employees are created by HR from the web app.
 - [x] Notifications and audit log
 - [ ] Automated tests
 - [ ] Email notifications
-- [ ] Deployment
