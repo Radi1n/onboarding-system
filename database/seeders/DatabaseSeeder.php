@@ -10,7 +10,10 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->call(RoleSeeder::class);
+        $this->call([
+            RoleSeeder::class,
+            TaskTemplateSeeder::class,
+        ]);
 
         $users = [
             ['Admin',   'admin@example.com',    'admin'],
