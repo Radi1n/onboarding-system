@@ -1,22 +1,33 @@
 <?php
 
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\EmployeeController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OnboardingStepController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\DashboardController;
 
 Route::post('/auth/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
 
-        Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
     Route::get('/admin-only', fn () => ['message' => 'Welcome, admin'])
+        ->middleware('role:admin');
+
+    // الإشعارات
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+
+    // سجل التدقيق: الأدمن بس
+    Route::get('/audit-logs', [AuditLogController::class, 'index'])
         ->middleware('role:admin');
 
     // الأقسام: الكل يشوف، الأدمن بس يعدّل
@@ -63,4 +74,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/documents/{document}/review', [DocumentController::class, 'review'])
         ->middleware('role:admin,hr');
     Route::get('/documents/{document}/download', [DocumentController::class, 'download']);
+
+        Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
+
+    // قائمة المدراء لنافذة إضافة موظف
+    Route::get('/managers', fn () => \App\Models\User::whereHas('role', fn ($q) => $q->where('name', 'manager'))
+        ->where('is_active', true)
+        ->get(['id', 'name']))
+        ->middleware('role:admin,hr');
 });

@@ -6,13 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\Onboarding;
 use App\Models\TaskTemplate;
+use App\Services\Activity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class OnboardingController extends Controller
 {
     // HR يبدأ Onboarding لموظف، والمهام تتولّد تلقائياً من القوالب
-    public function start(Employee $employee)
+    public function start(Request $request, Employee $employee)
     {
         if ($employee->onboarding()->exists()) {
             return response()->json(['message' => 'Onboarding already started.'], 409);
@@ -41,6 +42,24 @@ class OnboardingController extends Controller
             return $onboarding;
         });
 
+        $employee->loadMissing('user');
+
+        Activity::log(
+            $request->user(),
+            'onboarding.started',
+            $onboarding,
+            "Started onboarding for {$employee->user->name}",
+            null,
+            ['status' => 'employee_pending']
+        );
+
+        Activity::notify(
+            [$employee->user],
+            $onboarding,
+            'Welcome aboard',
+            'HR started your onboarding. Please upload your documents.'
+        );
+
         return response()->json($onboarding->load('employee.user:id,name', 'tasks'), 201);
     }
 
@@ -57,12 +76,20 @@ class OnboardingController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        return $onboarding->load('employee.user:id,name', 'tasks');
+        return $onboarding->load(
+            'employee.user:id,name,email',
+            'employee.department:id,name',
+            'employee.manager:id,name',
+            'tasks',
+            'documents'
+        );
     }
 
     // الموظف يسلّم بياناته، فينتقل الـOnboarding لمراجعة HR
     public function submit(Request $request, Onboarding $onboarding)
     {
+        $onboarding->loadMissing('employee.user');
+
         if ($onboarding->employee->user_id !== $request->user()->id) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
@@ -94,6 +121,24 @@ class OnboardingController extends Controller
             $onboarding->update(['status' => 'hr_review']);
         });
 
+        $name = $onboarding->employee->user->name;
+
+        Activity::log(
+            $request->user(),
+            'onboarding.submitted',
+            $onboarding,
+            "{$name} submitted their documents",
+            ['status' => 'employee_pending'],
+            ['status' => 'hr_review']
+        );
+
+        Activity::notify(
+            Activity::byRole('hr'),
+            $onboarding,
+            'Ready for HR review',
+            "{$name} submitted their documents."
+        );
+
         return $onboarding->load('tasks');
     }
 
@@ -107,6 +152,17 @@ class OnboardingController extends Controller
 
         if ($onboarding->status !== 'hr_review') {
             return response()->json(['message' => 'Onboarding is not in HR review.'], 422);
+        }
+
+        // ما نمرّر لـIT إلا لما الملفين معتمدين
+        if ($data['decision'] === 'approve') {
+            $statuses = $onboarding->documents()->pluck('status');
+
+            if ($statuses->count() < 2 || $statuses->contains(fn ($s) => $s !== 'approved')) {
+                return response()->json([
+                    'message' => 'All documents must be approved first.',
+                ], 422);
+            }
         }
 
         DB::transaction(function () use ($onboarding, $data) {
@@ -125,6 +181,43 @@ class OnboardingController extends Controller
                 $onboarding->update(['status' => 'employee_pending']);
             }
         });
+
+        $onboarding->loadMissing('employee.user');
+        $name = $onboarding->employee->user->name;
+
+        if ($data['decision'] === 'approve') {
+            Activity::log(
+                $request->user(),
+                'onboarding.hr_approved',
+                $onboarding,
+                "HR approved {$name}'s documents",
+                ['status' => 'hr_review'],
+                ['status' => 'it_setup']
+            );
+
+            Activity::notify(
+                Activity::byRole('it'),
+                $onboarding,
+                'IT setup needed',
+                "{$name} needs accounts and equipment."
+            );
+        } else {
+            Activity::log(
+                $request->user(),
+                'onboarding.hr_returned',
+                $onboarding,
+                "HR returned {$name}'s onboarding",
+                ['status' => 'hr_review'],
+                ['status' => 'employee_pending', 'comment' => $data['comment'] ?? null]
+            );
+
+            Activity::notify(
+                [$onboarding->employee->user],
+                $onboarding,
+                'Action needed',
+                'HR returned your onboarding. Please check the rejected documents and submit again.'
+            );
+        }
 
         return $onboarding->load('tasks');
     }

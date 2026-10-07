@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Onboarding;
 use App\Models\OnboardingTask;
+use App\Services\Activity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -27,7 +28,7 @@ class OnboardingStepController extends Controller
             return response()->json(['message' => 'Task already completed.'], 422);
         }
 
-        DB::transaction(function () use ($task, $onboarding, $request) {
+        $advanced = DB::transaction(function () use ($task, $onboarding, $request) {
             $task->update([
                 'status' => 'done',
                 'completed_at' => now(),
@@ -41,8 +42,40 @@ class OnboardingStepController extends Controller
 
             if (! $itRemaining) {
                 $onboarding->update(['status' => 'manager_approval']);
+
+                return true;
             }
+
+            return false;
         });
+
+        $onboarding->loadMissing('employee.user');
+        $name = $onboarding->employee->user->name;
+
+        Activity::log(
+            $request->user(),
+            'task.completed',
+            $task,
+            "{$request->user()->name} completed \"{$task->title}\" for {$name}"
+        );
+
+        if ($advanced) {
+            Activity::log(
+                $request->user(),
+                'onboarding.it_completed',
+                $onboarding,
+                "IT finished the setup for {$name}",
+                ['status' => 'it_setup'],
+                ['status' => 'manager_approval']
+            );
+
+            Activity::notify(
+                Activity::managersOf($onboarding),
+                $onboarding,
+                'Waiting for your approval',
+                "{$name}'s setup is ready for final approval."
+            );
+        }
 
         return $onboarding->fresh()->load('tasks');
     }
@@ -51,6 +84,7 @@ class OnboardingStepController extends Controller
     public function managerDecision(Request $request, Onboarding $onboarding)
     {
         $user = $request->user();
+        $onboarding->loadMissing('employee.user');
 
         if ($user->hasRole('manager') && $onboarding->employee->manager_id !== $user->id) {
             return response()->json(['message' => 'Forbidden.'], 403);
@@ -84,6 +118,49 @@ class OnboardingStepController extends Controller
                 $onboarding->update(['status' => 'it_setup']);
             }
         });
+
+        $name = $onboarding->employee->user->name;
+
+        if ($data['decision'] === 'approve') {
+            Activity::log(
+                $user,
+                'onboarding.completed',
+                $onboarding,
+                "{$user->name} approved {$name}'s onboarding",
+                ['status' => 'manager_approval'],
+                ['status' => 'completed']
+            );
+
+            Activity::notify(
+                [$onboarding->employee->user],
+                $onboarding,
+                'Onboarding completed',
+                'Everything is done. Welcome aboard!'
+            );
+
+            Activity::notify(
+                Activity::byRole('hr'),
+                $onboarding,
+                'Onboarding completed',
+                "{$name}'s onboarding is complete."
+            );
+        } else {
+            Activity::log(
+                $user,
+                'onboarding.manager_returned',
+                $onboarding,
+                "{$user->name} sent {$name}'s onboarding back to IT",
+                ['status' => 'manager_approval'],
+                ['status' => 'it_setup', 'comment' => $data['comment'] ?? null]
+            );
+
+            Activity::notify(
+                Activity::byRole('it'),
+                $onboarding,
+                'Sent back by manager',
+                "{$name}: {$data['comment']}"
+            );
+        }
 
         return $onboarding->fresh()->load('tasks');
     }

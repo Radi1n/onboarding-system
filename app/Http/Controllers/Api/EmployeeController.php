@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Activity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -63,6 +64,15 @@ class EmployeeController extends Controller
                 'start_date' => $data['start_date'] ?? null,
             ]);
         });
+
+        Activity::log(
+            $request->user(),
+            'employee.created',
+            $employee,
+            "{$request->user()->name} added {$data['name']}",
+            null,
+            ['email' => $data['email']]
+        );
 
         return response()->json($employee->load(self::RELATIONS), 201);
     }

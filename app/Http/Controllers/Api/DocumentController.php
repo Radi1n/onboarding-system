@@ -6,11 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\Document;
 use App\Models\Onboarding;
 use App\Models\User;
+use App\Services\Activity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class DocumentController extends Controller
 {
+    private const LABELS = [
+        'national_id' => 'National ID',
+        'contract' => 'Signed contract',
+    ];
+
     private function canAccess(User $user, Onboarding $onboarding): bool
     {
         $employee = $onboarding->employee;
@@ -69,6 +75,13 @@ class DocumentController extends Controller
             ]
         );
 
+        Activity::log(
+            $user,
+            'document.uploaded',
+            $document,
+            "{$user->name} uploaded the ".self::LABELS[$data['type']]
+        );
+
         return response()->json($document, 201);
     }
 
@@ -84,11 +97,23 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Onboarding is not in HR review.'], 422);
         }
 
+        $old = $document->status;
+        $new = $data['decision'] === 'approve' ? 'approved' : 'rejected';
+
         $document->update([
-            'status' => $data['decision'] === 'approve' ? 'approved' : 'rejected',
-            'reject_reason' => $data['decision'] === 'reject' ? $data['reason'] : null,
+            'status' => $new,
+            'reject_reason' => $new === 'rejected' ? $data['reason'] : null,
             'reviewed_by' => $request->user()->id,
         ]);
+
+        Activity::log(
+            $request->user(),
+            "document.{$new}",
+            $document,
+            "{$request->user()->name} {$new} the ".self::LABELS[$document->type],
+            ['status' => $old],
+            ['status' => $new, 'reason' => $document->reject_reason]
+        );
 
         return $document;
     }
